@@ -1,93 +1,87 @@
 "use client";
-import { useEffect, useState } from "react";
-import { auth } from "../lib/firebase"; // adjust path if needed
+
+import { useState, useEffect } from "react";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { auth } from "../lib/firebase";
 import { useRouter } from "next/navigation";
-import { User } from "firebase/auth";
+import { FaCalendarAlt, FaTasks, FaStickyNote } from "react-icons/fa";
 
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-      } else {
-        router.push("/signin");
-      }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser) router.push("/signin");
+      setUser(currentUser);
     });
     return () => unsubscribe();
   }, [router]);
 
-  if (!user) return <div>Loading...</div>;
+  const handleSignOut = async () => {
+    await signOut(auth);
+    router.push("/signin");
+  };
 
   return (
-    <main
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        fontFamily: "sans-serif",
-      }}
-    >
-      <h1>Welcome back, {user.displayName?.split(" ")[0]} 👋</h1>
-      <p>Your focus space for today awaits.</p>
-
-      <div style={{ marginTop: "2rem", display: "flex", gap: "2rem" }}>
-        <button
-          onClick={() => router.push("/notes")}
-          style={buttonStyle}
-        >
-          📝 Notes
-        </button>
-        <button
-          onClick={() => router.push("/tasks")}
-          style={buttonStyle}
-        >
-          ✅ Tasks
-        </button>
-        <button
-          onClick={() => router.push("/calendar")}
-          style={buttonStyle}
-        >
-          📅 Calendar
-        </button>
-      </div>
-
-      <div style={{ marginTop: "4rem" }}>
-        <h3>📊 Your Daily Progress</h3>
-        <div
-          style={{
-            width: "300px",
-            height: "20px",
-            borderRadius: "10px",
-            backgroundColor: "#e5e5e5",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: "60%", // mock progress value
-              height: "100%",
-              backgroundColor: "#4CAF50",
-              transition: "width 0.3s ease",
-            }}
-          />
+    <main className="min-h-screen bg-gradient-to-b from-indigo-100 to-white flex flex-col items-center py-10">
+      <div className="w-full max-w-2xl p-4">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-semibold text-gray-800">
+            👋 Welcome, {user?.displayName || "Learner"}
+          </h1>
+          <button
+            onClick={handleSignOut}
+            className="text-sm text-gray-600 hover:text-red-500"
+          >
+            Sign Out
+          </button>
         </div>
-        <p style={{ marginTop: "8px" }}>You’ve completed 60% of your goals today!</p>
+
+        <section className="bg-white rounded-xl shadow-md p-5 mb-6">
+          <h2 className="text-xl font-semibold mb-3">Today&apos;s Agenda</h2>
+          <p className="text-gray-500">
+            No tasks yet — stay tuned for productivity magic!
+          </p>
+        </section>
+
+        <section className="grid grid-cols-3 gap-4 mb-6">
+          <button
+            onClick={() => router.push("/calendar")}
+            className="bg-indigo-200 hover:bg-indigo-300 rounded-xl p-4 flex flex-col items-center"
+          >
+            <FaCalendarAlt className="text-3xl text-indigo-700 mb-2" />
+            <span>Calendar</span>
+          </button>
+
+          <button
+            onClick={() => router.push("/tasks")}
+            className="bg-indigo-200 hover:bg-indigo-300 rounded-xl p-4 flex flex-col items-center"
+          >
+            <FaTasks className="text-3xl text-indigo-700 mb-2" />
+            <span>Tasks</span>
+          </button>
+
+          <button
+            onClick={() => router.push("/notes")}
+            className="bg-indigo-200 hover:bg-indigo-300 rounded-xl p-4 flex flex-col items-center"
+          >
+            <FaStickyNote className="text-3xl text-indigo-700 mb-2" />
+            <span>Notes</span>
+          </button>
+        </section>
+
+        <section className="bg-white rounded-xl shadow-md p-5">
+          <h2 className="text-xl font-semibold mb-3">Progress Tracker</h2>
+          <div className="w-full bg-gray-200 rounded-full h-3">
+            <div
+              className="bg-green-500 h-3 rounded-full"
+              style={{ width: "40%" }}
+            ></div>
+          </div>
+          <p className="text-sm text-gray-500 mt-2">40% complete today 🎯</p>
+        </section>
       </div>
     </main>
   );
 }
-
-const buttonStyle = {
-  backgroundColor: "#1E88E5",
-  color: "white",
-  border: "none",
-  padding: "10px 20px",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontSize: "1rem",
-};
