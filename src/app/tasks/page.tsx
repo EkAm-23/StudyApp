@@ -2,16 +2,50 @@
 
 import { useRouter } from "next/navigation";
 import { FaArrowLeft, FaPlus } from "react-icons/fa";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { db, auth } from "../../lib/firebase";
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function TasksPage() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<string[]>([]);
   const [newTask, setNewTask] = useState("");
 
-  const addTask = () => {
-    if (!newTask.trim()) return;
-    setTasks([...tasks, newTask]);
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+
+        const q = query(
+          collection(db, "tasks"),
+          where("userId", "==", user.uid)
+        );
+        const unsub = onSnapshot(q, (snapshot) => {
+          setTasks(snapshot.docs.map((doc) => doc.data().task));
+        });
+        return () => unsub();
+      } else {
+        router.push("/signin");
+      }
+    });
+    return () => unsubAuth();
+  }, [router]);
+
+  const addTask = async () => {
+    if (!newTask.trim() || !userId) return;
+    await addDoc(collection(db, "tasks"), {
+      userId,
+      task: newTask,
+      createdAt: new Date(),
+    });
     setNewTask("");
   };
 

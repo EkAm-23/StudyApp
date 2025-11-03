@@ -2,16 +2,46 @@
 
 import { useRouter } from "next/navigation";
 import { FaArrowLeft } from "react-icons/fa";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { db, auth } from "../../lib/firebase";
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function NotesPage() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState("");
 
-  const addNote = () => {
-    if (!newNote.trim()) return;
-    setNotes([...notes, newNote]);
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+        const q = query(collection(db, "notes"), where("userId", "==", user.uid));
+        const unsub = onSnapshot(q, (snapshot) => {
+          setNotes(snapshot.docs.map((doc) => doc.data().note));
+        });
+        return () => unsub();
+      } else {
+        router.push("/signin");
+      }
+    });
+    return () => unsubAuth();
+  }, [router]);
+
+  const addNote = async () => {
+    if (!newNote.trim() || !userId) return;
+    await addDoc(collection(db, "notes"), {
+      userId,
+      note: newNote,
+      createdAt: new Date(),
+    });
     setNewNote("");
   };
 
