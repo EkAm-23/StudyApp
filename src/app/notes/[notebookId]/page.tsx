@@ -15,6 +15,7 @@ import {
 import { useAuthState } from "react-firebase-hooks/auth";
 import { Button } from "@/components/ui/button";
 import TipTapEditor from "@/components/ui/TipTapEditor";
+import { motion } from "framer-motion";
 
 interface PageData {
   id: string;
@@ -30,13 +31,23 @@ interface Section {
 export default function NotebookPage() {
   const { notebookId } = useParams();
   const router = useRouter();
-  const [user] = useAuthState(auth);
+  const [user, loading] = useAuthState(auth);
 
   const [notebookTitle, setNotebookTitle] = useState("");
   const [sections, setSections] = useState<Section[]>([]);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [pages, setPages] = useState<PageData[]>([]);
   const [selectedPage, setSelectedPage] = useState<PageData | null>(null);
+
+  const [sectionsLoaded, setSectionsLoaded] = useState(false);
+  const [pagesLoaded, setPagesLoaded] = useState(false);
+
+  // Redirect to signin if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/signin");
+    }
+  }, [user, loading, router]);
 
   // add vs edit states are separate to avoid clobbering values
   const [addingSection, setAddingSection] = useState(false);
@@ -163,6 +174,7 @@ export default function NotebookPage() {
           name: (d.data().name as string) || "Untitled Section",
         }))
       );
+      setSectionsLoaded(true);
     });
 
     return () => unsub();
@@ -191,6 +203,7 @@ export default function NotebookPage() {
           content: (d.data().content as string) || "",
         }))
       );
+      setPagesLoaded(true);
     });
 
     return () => unsub();
@@ -293,20 +306,20 @@ export default function NotebookPage() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-white via-[#F5E6D3] to-[#E8D4BE]">
+    <div className="flex h-screen bg-gradient-to-br from-white via-sky-50 to-sky-100">
       {/* Sections Sidebar */}
       <div 
-        className="bg-[#E8D4BE] backdrop-blur-sm p-5 border-r border-[#D4C4B0] shadow-sm overflow-y-auto relative flex-shrink-0"
+        className="bg-sky-50 backdrop-blur-sm p-5 border-r border-sky-200 shadow-sm overflow-y-auto relative flex-shrink-0"
         style={{ width: `${sectionsWidth}px` }}
       >
         <div className="flex justify-between items-center mb-6 gap-3">
           <h2 className="font-bold text-base text-black flex items-center gap-2 min-w-0">
             <button
               onClick={() => router.push('/notes')}
-              className="hover:bg-[#D4C4B0] p-1 rounded transition-colors flex-shrink-0"
+              className="hover:bg-sky-200 p-1 rounded transition-colors flex-shrink-0"
               title="Back to Notebooks"
             >
-              <svg className="w-4 h-4 text-[#4E692D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </button>
@@ -315,7 +328,7 @@ export default function NotebookPage() {
           <Button 
             size="sm" 
             onClick={() => setAddingSection(true)}
-            className="bg-[#4E692D] hover:bg-[#3E5623] text-white shadow-sm p-1.5 h-auto flex-shrink-0"
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm p-1.5 h-auto flex-shrink-0"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -327,7 +340,7 @@ export default function NotebookPage() {
           <div className="mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
             <input
               ref={addInputRef}
-              className="border-2 border-[#4E692D] p-2 rounded-lg w-full focus:outline-none focus:border-[#3E5623] focus:ring-2 focus:ring-[#4E692D]/30 transition-all text-sm text-black bg-white"
+              className="border-2 border-blue-600 p-2 rounded-lg w-full focus:outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-600/30 transition-all text-sm text-black bg-white"
               placeholder="New section name..."
               value={newSectionName}
               onChange={(e) => setNewSectionName(e.target.value)}
@@ -345,73 +358,72 @@ export default function NotebookPage() {
           </div>
         )}
 
-        <div className="space-y-2">
-          {sections.map((section) => (
-            <div key={section.id} className="relative group">
-              <button
-                className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 flex items-center gap-3 ${
-                  selectedSection === section.id 
-                    ? "bg-[#4E692D] text-white shadow-md" 
-                    : "bg-white hover:bg-[#DAE4CE] text-black hover:shadow-sm"
-                }`}
-                onClick={() => {
-                  setSelectedSection(section.id);
-                  setSelectedPage(null);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  const newName = prompt("Rename section:", section.name);
-                  if (newName && newName.trim()) {
-                    updateDoc(
-                      doc(
-                        db,
-                        "users",
-                        user!.uid,
-                        "notebooks",
-                        notebookId as string,
-                        "sections",
-                        section.id
-                      ),
-                      { name: newName.trim() }
-                    );
-                  }
-                }}
-              >
-                <svg 
-                  className={`w-4 h-4 flex-shrink-0 transition-colors ${selectedSection === section.id ? 'text-white' : 'text-[#4E692D] group-hover:text-[#97AE7B]'}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+        {!sectionsLoaded ? (
+          <div className="text-center py-8 text-gray-500">
+            <div className="w-10 h-10 mx-auto mb-2 border-3 border-sky-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-sm">Fetching sections...</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {sections.map((section, index) => (
+                <motion.div 
+                  key={section.id} 
+                  className="relative group"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: index * 0.05 }}
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-                <span className="font-medium flex-1 truncate text-sm">{section.name}</span>
-              </button>
+                  <button
+                    className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 flex items-center gap-3 ${
+                      selectedSection === section.id 
+                        ? "bg-blue-600 text-white shadow-md" 
+                        : "bg-white hover:bg-sky-100 text-black hover:shadow-sm"
+                    }`}
+                    onClick={() => {
+                      setSelectedSection(section.id);
+                      setSelectedPage(null);
+                      setPagesLoaded(false);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      const newName = prompt("Rename section:", section.name);
+                      if (newName && newName.trim()) {
+                        updateDoc(
+                          doc(
+                            db,
+                            "users",
+                            user!.uid,
+                            "notebooks",
+                            notebookId as string,
+                            "sections",
+                            section.id
+                          ),
+                          { name: newName.trim() }
+                        );
+                      }
+                    }}
+                  >
+                    <svg 
+                      className={`w-4 h-4 flex-shrink-0 transition-colors ${selectedSection === section.id ? 'text-white' : 'text-blue-700 group-hover:text-blue-400'}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span className="font-medium flex-1 truncate text-sm">{section.name}</span>
+                  </button>
 
-              {/* delete button */}
-              <button
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center shadow-sm"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  if (!confirm("Delete this section and all its pages?")) return;
+                  {/* delete button */}
+                  <button
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center shadow-sm"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm("Delete this section and all its pages?")) return;
 
-                  const pagesSnap = await getDocs(
-                    collection(
-                      db,
-                      "users",
-                      user!.uid,
-                      "notebooks",
-                      notebookId as string,
-                      "sections",
-                      section.id,
-                      "pages"
-                    )
-                  );
-
-                  await Promise.all(
-                    pagesSnap.docs.map(d =>
-                      deleteDoc(
-                        doc(
+                      const pagesSnap = await getDocs(
+                        collection(
                           db,
                           "users",
                           user!.uid,
@@ -419,50 +431,72 @@ export default function NotebookPage() {
                           notebookId as string,
                           "sections",
                           section.id,
-                          "pages",
-                          d.id
+                          "pages"
                         )
-                      )
-                    )
-                  );
+                      );
 
-                  await deleteDoc(
-                    doc(
-                      db,
-                      "users",
-                      user!.uid,
-                      "notebooks",
-                      notebookId as string,
-                      "sections",
-                      section.id
-                    )
-                  );
+                      await Promise.all(
+                        pagesSnap.docs.map(d =>
+                          deleteDoc(
+                            doc(
+                              db,
+                              "users",
+                              user!.uid,
+                              "notebooks",
+                              notebookId as string,
+                              "sections",
+                              section.id,
+                              "pages",
+                              d.id
+                            )
+                          )
+                        )
+                      );
 
-                  setSections(prev => prev.filter(s => s.id !== section.id));
-                  if (selectedSection === section.id) {
-                    setSelectedSection(null);
-                    setSelectedPage(null);
-                  }
-                }}
-              >
-                ✕
-              </button>
+                      await deleteDoc(
+                        doc(
+                          db,
+                          "users",
+                          user!.uid,
+                          "notebooks",
+                          notebookId as string,
+                          "sections",
+                          section.id
+                        )
+                      );
+
+                      setSections(prev => prev.filter(s => s.id !== section.id));
+                      if (selectedSection === section.id) {
+                        setSelectedSection(null);
+                        setSelectedPage(null);
+                      }
+                    }}
+                  >
+                    ✕
+                  </button>
+                </motion.div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {sections.length === 0 && !addingSection && (
-          <div className="text-center py-8 text-gray-500">
-            <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            <p className="text-sm">No sections yet</p>
-          </div>
+            {sections.length === 0 && !addingSection && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5 }}
+                className="text-center py-8 text-gray-500"
+              >
+                <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <p className="text-sm">No sections yet</p>
+              </motion.div>
+            )}
+          </>
         )}
 
         {/* Resize handle */}
         <div
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-[#D4C4B0] hover:bg-[#4E692D] transition-colors group select-none"
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-sky-200 hover:bg-blue-600 transition-colors group select-none"
           onMouseDown={(e) => {
             e.preventDefault();
             setIsResizingSections(true);
@@ -470,8 +504,8 @@ export default function NotebookPage() {
         >
           <div className="absolute top-1/2 right-0 transform translate-x-1/2 -translate-y-1/2 w-3 h-12 flex items-center justify-center transition-opacity">
             <div className="flex flex-col gap-0.5">
-              <div className="w-0.5 h-4 bg-[#4E692D] rounded-full"></div>
-              <div className="w-0.5 h-4 bg-[#4E692D] rounded-full"></div>
+              <div className="w-0.5 h-4 bg-blue-600 rounded-full"></div>
+              <div className="w-0.5 h-4 bg-blue-600 rounded-full"></div>
             </div>
           </div>
         </div>
@@ -480,12 +514,12 @@ export default function NotebookPage() {
       {/* Pages Sidebar */}
       {selectedSection && (
         <div 
-          className="bg-[#E8D4BE] backdrop-blur-sm p-5 border-r border-[#D4C4B0] shadow-sm overflow-y-auto relative flex-shrink-0"
+          className="bg-sky-50 backdrop-blur-sm p-5 border-r border-sky-200 shadow-sm overflow-y-auto relative flex-shrink-0"
           style={{ width: `${pagesWidth}px` }}
         >
           <div className="flex justify-between items-center mb-6 gap-3">
             <h2 className="font-bold text-base text-black flex items-center gap-2 min-w-0">
-              <svg className="w-4 h-4 text-[#4E692D] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-blue-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <span className="truncate">Pages</span>
@@ -493,7 +527,7 @@ export default function NotebookPage() {
             <Button 
               size="sm" 
               onClick={() => setAddingPage(true)}
-              className="bg-[#4E692D] hover:bg-[#3E5623] text-white shadow-sm p-1.5 h-auto flex-shrink-0"
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm p-1.5 h-auto flex-shrink-0"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -503,9 +537,9 @@ export default function NotebookPage() {
 
           {addingPage && (
             <div className="mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <input
+                <input
                 ref={addPageInputRef}
-                className="border-2 border-[#4E692D] p-2 rounded-lg w-full focus:outline-none focus:border-[#3E5623] focus:ring-2 focus:ring-[#4E692D]/30 transition-all text-sm text-black bg-white"
+                className="border-2 border-blue-600 p-2 rounded-lg w-full focus:outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-600/30 transition-all text-sm text-black bg-white"
                 placeholder="New page name..."
                 value={newPageName}
                 onChange={(e) => setNewPageName(e.target.value)}
@@ -522,73 +556,93 @@ export default function NotebookPage() {
             </div>
           )}
 
-          <div className="space-y-2">
-            {pages.map((page) => (
-              <div key={page.id} className="relative group">
-                <button
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 flex items-center gap-3 ${
-                    selectedPage?.id === page.id 
-                      ? "bg-[#4E692D] text-white shadow-md" 
-                      : "bg-white hover:bg-[#DAE4CE] text-black hover:shadow-sm"
-                  }`}
-                  onClick={() => setSelectedPage(page)}
-                >
-                  <svg 
-                    className={`w-4 h-4 flex-shrink-0 transition-colors ${selectedPage?.id === page.id ? 'text-white' : 'text-[#4E692D] group-hover:text-[#97AE7B]'}`} 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="font-medium flex-1 truncate text-sm">{page.title}</span>
-                </button>
-
-                {/* delete button */}
-                <button
-                  className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center shadow-sm"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (!confirm("Delete this page?")) return;
-                    if (!user || !notebookId) return;
-
-                    await deleteDoc(
-                      doc(
-                        db,
-                        "users",
-                        user.uid,
-                        "notebooks",
-                        notebookId as string,
-                        "sections",
-                        selectedSection as string,
-                        "pages",
-                        page.id
-                      )
-                    );
-
-                    if (selectedPage?.id === page.id) {
-                      setSelectedPage(null);
-                    }
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {pages.length === 0 && !addingPage && (
+          {!pagesLoaded ? (
             <div className="text-center py-8 text-gray-500">
-              <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-sm">No pages yet</p>
+              <div className="w-10 h-10 mx-auto mb-2 border-3 border-sky-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="text-sm">Fetching pages...</p>
             </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {pages.map((page, index) => (
+                  <motion.div 
+                    key={page.id} 
+                    className="relative group"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: index * 0.05 }}
+                  >
+                    <button
+                      className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 flex items-center gap-3 ${
+                        selectedPage?.id === page.id 
+                          ? "bg-blue-600 text-white shadow-md" 
+                          : "bg-white hover:bg-sky-100 text-black hover:shadow-sm"
+                      }`}
+                      onClick={() => setSelectedPage(page)}
+                    >
+                      <svg 
+                        className={`w-4 h-4 flex-shrink-0 transition-colors ${selectedPage?.id === page.id ? 'text-white' : 'text-blue-700 group-hover:text-blue-400'}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="font-medium flex-1 truncate text-sm">{page.title}</span>
+                    </button>
+
+                    {/* delete button */}
+                    <button
+                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center shadow-sm"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!confirm("Delete this page?")) return;
+                        if (!user || !notebookId) return;
+
+                        await deleteDoc(
+                          doc(
+                            db,
+                            "users",
+                            user.uid,
+                            "notebooks",
+                            notebookId as string,
+                            "sections",
+                            selectedSection as string,
+                            "pages",
+                            page.id
+                          )
+                        );
+
+                        if (selectedPage?.id === page.id) {
+                          setSelectedPage(null);
+                        }
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+
+              {pages.length === 0 && !addingPage && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.5 }}
+                  className="text-center py-8 text-gray-500"
+                >
+                  <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">No pages yet</p>
+                </motion.div>
+              )}
+            </>
           )}
 
           {/* Resize handle */}
           <div
-            className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-[#D4C4B0] hover:bg-[#4E692D] transition-colors group select-none"
+            className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-sky-200 hover:bg-blue-600 transition-colors group select-none"
             onMouseDown={(e) => {
               e.preventDefault();
               setIsResizingPages(true);
@@ -596,8 +650,8 @@ export default function NotebookPage() {
           >
             <div className="absolute top-1/2 right-0 transform translate-x-1/2 -translate-y-1/2 w-3 h-12 flex items-center justify-center transition-opacity">
               <div className="flex flex-col gap-0.5">
-                <div className="w-0.5 h-4 bg-[#4E692D] rounded-full"></div>
-                <div className="w-0.5 h-4 bg-[#4E692D] rounded-full"></div>
+                <div className="w-0.5 h-4 bg-blue-600 rounded-full"></div>
+                <div className="w-0.5 h-4 bg-blue-600 rounded-full"></div>
               </div>
             </div>
           </div>
@@ -608,16 +662,16 @@ export default function NotebookPage() {
       <div className="flex-1 p-8 overflow-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#4E692D] mb-2">
+          <h1 className="text-3xl font-bold text-blue-700 mb-2">
             {notebookTitle}
           </h1>
-          <div className="h-1 w-20 bg-[#4E692D] rounded-full"></div>
+          <div className="h-1 w-20 bg-blue-600 rounded-full"></div>
         </div>
 
         {!selectedSection && (
           <div className="flex items-center justify-center h-[60vh]">
             <div className="text-center">
-              <svg className="w-24 h-24 mx-auto mb-4 text-[#8B7355]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-24 h-24 mx-auto mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
               <p className="text-gray-800 text-lg font-medium">Select a section to view pages</p>
@@ -629,7 +683,7 @@ export default function NotebookPage() {
         {selectedSection && !selectedPage && (
           <div className="flex items-center justify-center h-[60vh]">
             <div className="text-center">
-              <svg className="w-24 h-24 mx-auto mb-4 text-[#8B7355]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-24 h-24 mx-auto mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <p className="text-gray-800 text-lg font-medium">Select a page to start editing</p>
@@ -639,10 +693,17 @@ export default function NotebookPage() {
         )}
 
         {selectedPage && (
-          <div className="max-w-5xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-[#D4C4B0]">
+          <motion.div 
+            key={selectedPage.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="max-w-5xl mx-auto"
+          >
+            <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-sky-200">
               <input
-                className="text-3xl font-bold mb-6 w-full border-b-2 border-[#D4C4B0] focus:border-[#4E692D] p-2 focus:outline-none transition-colors text-black placeholder:text-gray-400"
+                className="text-3xl font-bold mb-6 w-full border-b-2 border-sky-200 focus:border-blue-600 p-2 focus:outline-none transition-colors text-black placeholder:text-gray-400"
                 placeholder="Page title..."
                 value={selectedPage.title}
                 onChange={(e) => {
@@ -654,7 +715,7 @@ export default function NotebookPage() {
 
               <div className="flex items-center gap-2 mb-4 text-sm">
                 {saveStatus === "saving" && (
-                  <span className="flex items-center text-[#8B7355]">
+                  <span className="flex items-center text-slate-500">
                     <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -663,7 +724,7 @@ export default function NotebookPage() {
                   </span>
                 )}
                 {saveStatus === "saved" && (
-                  <span className="flex items-center text-[#4E692D]">
+                  <span className="flex items-center text-blue-600">
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
@@ -680,7 +741,7 @@ export default function NotebookPage() {
                 }}
               />
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

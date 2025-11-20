@@ -46,17 +46,17 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
 
   return (
     <div
-      className="border-2 border-[#D4C4B0] rounded-xl bg-white shadow-md hover:shadow-lg transition-shadow focus-within:border-[#4E692D] focus-within:ring-4 focus-within:ring-[#4E692D]/20"
+      className="border-2 border-sky-200 rounded-xl bg-white shadow-md hover:shadow-lg transition-shadow focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-600/20"
       onClick={() => editor?.commands.focus()}
     >
       {/* Toolbar */}
-      <div className="border-b-2 border-[#D4C4B0] p-3 flex gap-1 flex-wrap bg-[#E8D4BE] rounded-t-xl">
+  <div className="border-b-2 border-sky-200 p-3 flex gap-1 flex-wrap bg-sky-50 rounded-t-xl">
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
             editor.isActive("bold") 
-              ? "bg-[#4E692D] text-white shadow-md font-extrabold" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D] font-extrabold"
+              ? "bg-blue-600 text-white shadow-md font-extrabold" 
+              : "hover:bg-sky-200 text-blue-700 font-extrabold"
           }`}
           title="Bold"
         >
@@ -67,8 +67,8 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           onClick={() => editor.chain().focus().toggleItalic().run()}
           className={`px-3 py-2 text-sm rounded-lg italic transition-all duration-200 ${
             editor.isActive("italic") 
-              ? "bg-[#4E692D] text-white shadow-md font-bold" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D] font-bold"
+              ? "bg-blue-600 text-white shadow-md font-bold" 
+              : "hover:bg-sky-200 text-blue-700 font-bold"
           }`}
           title="Italic"
         >
@@ -79,22 +79,22 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           className={`px-3 py-2 text-sm rounded-lg underline transition-all duration-200 ${
             editor.isActive("underline") 
-              ? "bg-[#4E692D] text-white shadow-md font-bold" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D] font-bold"
+              ? "bg-blue-600 text-white shadow-md font-bold" 
+              : "hover:bg-sky-200 text-blue-700 font-bold"
           }`}
           title="Underline"
         >
           <span>U</span>
         </button>
 
-        <div className="w-px h-8 bg-[#8B7355] mx-1"></div>
+  <div className="w-px h-8 bg-slate-300 mx-1"></div>
 
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           className={`px-3 py-2 text-sm rounded-lg font-extrabold transition-all duration-200 flex items-center gap-1 ${
             editor.isActive("heading", { level: 2 }) 
-              ? "bg-[#4E692D] text-white shadow-md" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D]"
+              ? "bg-blue-600 text-white shadow-md" 
+              : "hover:bg-sky-200 text-blue-700"
           }`}
           title="Heading"
         >
@@ -104,14 +104,14 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           H2
         </button>
 
-        <div className="w-px h-8 bg-[#8B7355] mx-1"></div>
+  <div className="w-px h-8 bg-slate-300 mx-1"></div>
 
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-1 font-bold ${
             editor.isActive("bulletList") 
-              ? "bg-[#4E692D] text-white shadow-md" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D]"
+              ? "bg-blue-600 text-white shadow-md" 
+              : "hover:bg-sky-200 text-blue-700"
           }`}
           title="Bullet List"
         >
@@ -125,8 +125,8 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-1 font-bold ${
             editor.isActive("orderedList") 
-              ? "bg-[#4E692D] text-white shadow-md" 
-              : "hover:bg-[#D4C4B0] text-[#4E692D]"
+              ? "bg-blue-600 text-white shadow-md" 
+              : "hover:bg-sky-200 text-blue-700"
           }`}
           title="Numbered List"
         >
@@ -141,7 +141,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
         <button
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          className="px-3 py-2 text-sm rounded-lg hover:bg-[#D4C4B0] text-[#4E692D] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-3 py-2 text-sm rounded-lg hover:bg-sky-200 text-blue-700 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Undo"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
@@ -152,7 +152,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
         <button
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          className="px-3 py-2 text-sm rounded-lg hover:bg-[#D4C4B0] text-[#4E692D] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-3 py-2 text-sm rounded-lg hover:bg-sky-200 text-blue-700 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Redo"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>

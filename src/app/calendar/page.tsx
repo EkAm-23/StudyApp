@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { FaArrowLeft } from "react-icons/fa";
 import {
   collection,
   query,
@@ -136,12 +135,6 @@ export default function CalendarPage() {
     <main className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white flex flex-col items-center py-10 px-4 relative overflow-hidden">
       {/* Header */}
       <div className="w-full max-w-5xl mb-8">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center text-pink-300 hover:text-white transition mb-4"
-        >
-          <FaArrowLeft className="mr-2" /> Back to Home
-        </button>
         <motion.h1
           className="text-4xl font-bold text-center bg-gradient-to-r from-purple-400 to-pink-300 bg-clip-text text-transparent"
           initial={{ opacity: 0, y: -20 }}

@@ -17,7 +17,7 @@ import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { FaArrowLeft, FaCheck, FaTrash } from "react-icons/fa";
+import { FaCheck, FaTrash } from "react-icons/fa";
 
 interface Task {
   id: string;
@@ -60,11 +60,14 @@ export default function TasksPage() {
   // Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) setUserId(u.uid);
-      else setUserId(null);
+      if (u) {
+        setUserId(u.uid);
+      } else {
+        router.push("/signin");
+      }
     });
     return () => unsub();
-  }, []);
+  }, [router]);
 
   // Real-time listeners: tasks (single collection) + completedTasks
   useEffect(() => {
@@ -240,17 +243,6 @@ export default function TasksPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-100 via-sky-50 to-emerald-100 text-gray-900 flex flex-col items-center py-12 px-4 relative">
-      {/* Back Button */}
-      <div className="absolute top-6 left-6">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center bg-white/60 hover:bg-white/80 backdrop-blur-md px-4 py-2 rounded-lg text-gray-700 transition-all shadow-sm"
-        >
-          <FaArrowLeft className="mr-2" />
-          Back to Home
-        </button>
-      </div>
-
       {/* Progress Overview */}
       <motion.div
         onClick={() => router.push("/progress")}

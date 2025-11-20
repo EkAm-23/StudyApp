@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { FaArrowLeft, FaCheckCircle } from "react-icons/fa";
+import { FaCheckCircle } from "react-icons/fa";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -169,17 +169,6 @@ export default function ProgressPage() {
   // ---- UI ----
   return (
     <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-sky-100 to-emerald-50 text-gray-900 flex flex-col items-center py-12 px-4">
-      {/* Back Button */}
-      <div className="absolute top-6 left-6">
-        <button
-          onClick={() => router.push("/tasks")}
-          className="flex items-center bg-white/70 hover:bg-white/90 backdrop-blur-md px-4 py-2 rounded-lg text-gray-800 transition-all shadow-sm"
-        >
-          <FaArrowLeft className="mr-2" />
-          Back to Tasks
-        </button>
-      </div>
-
       {/* Title */}
       <motion.h1
         className="text-5xl font-bold mb-10 bg-clip-text text-transparent bg-gradient-to-r from-purple-600 via-indigo-500 to-blue-400"
