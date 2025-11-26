@@ -4,7 +4,8 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Heading from '@tiptap/extension-heading';
 
 import BulletList from "@tiptap/extension-bullet-list";
 import OrderedList from "@tiptap/extension-ordered-list";
@@ -16,6 +17,24 @@ interface TipTapEditorProps {
 }
 
 export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
+  type SpeechRecognitionLike = {
+    lang: string;
+    interimResults: boolean;
+    continuous: boolean;
+    start: () => void;
+    stop: () => void;
+    addEventListener: (type: 'result' | 'end' | 'error', cb: (e: unknown) => void) => void;
+    removeEventListener: (type: 'result' | 'end' | 'error', cb: (e: unknown) => void) => void;
+  };
+  type SpeechResult = { isFinal: boolean; 0?: { transcript?: string } };
+  type SpeechEvent = { resultIndex: number; results: SpeechResult[] };
+  // Speech state (reused from Tasks page patterns)
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [interimText, setInterimText] = useState("");
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const lastFinalRef = useRef<string | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -23,6 +42,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
         orderedList: false,
         listItem: false
       }),
+      Heading.configure({ levels: [1, 2, 3] }),
       BulletList,
       OrderedList,
       ListItem,
@@ -35,6 +55,118 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
     immediatelyRender: false,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
+
+  // Feature detect Web Speech API
+  useEffect(() => {
+    const win = typeof window !== "undefined" ? (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }) : undefined;
+    const SpeechRecognition = win?.webkitSpeechRecognition || win?.SpeechRecognition || null;
+    if (!SpeechRecognition) {
+      // defer to next tick to avoid sync setState warning
+      setTimeout(() => setSpeechSupported(false), 0);
+      return;
+    }
+    try {
+      const rec = new SpeechRecognition();
+      rec.lang = "en-US";
+      rec.interimResults = true;
+      rec.continuous = true;
+      recognitionRef.current = rec;
+      setTimeout(() => setSpeechSupported(true), 0);
+    } catch {
+      setTimeout(() => setSpeechSupported(false), 0);
+    }
+  }, []);
+
+  // Recognition handlers
+  useEffect(() => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+
+    const collapseRepeatedWords = (s: string) => {
+      if (!s) return s;
+      const parts = s.trim().split(/\s+/);
+      const out: string[] = [];
+      for (let i = 0; i < parts.length; i++) {
+        const prev = out[out.length - 1];
+        if (!prev || prev.toLowerCase() !== parts[i].toLowerCase()) {
+          out.push(parts[i]);
+        }
+      }
+      return out.join(" ");
+    };
+
+    const onResult = (e: unknown) => {
+      const event = e as SpeechEvent;
+      let localFinal = "";
+      let localInterim = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const res = event.results[i];
+        const transcript = (res[0]?.transcript ?? "").trim();
+        if (res.isFinal) localFinal += (localFinal ? " " : "") + transcript;
+        else localInterim += (localInterim ? " " : "") + transcript;
+      }
+
+      setInterimText(localInterim);
+
+      if (localFinal && editor) {
+        const cleaned = collapseRepeatedWords(localFinal);
+        const duplicate = lastFinalRef.current && lastFinalRef.current.toLowerCase() === cleaned.toLowerCase();
+        if (!duplicate) {
+          editor.chain().focus().insertContent(cleaned + " ").run();
+          lastFinalRef.current = cleaned;
+        }
+        setInterimText("");
+      }
+    };
+
+    const onEnd = () => {
+      setListening(false);
+      setInterimText("");
+    };
+
+    const onError = (e: unknown) => {
+      console.error("Speech recognition error", e);
+      setListening(false);
+    };
+
+    rec.addEventListener("result", onResult);
+    rec.addEventListener("end", onEnd);
+    rec.addEventListener("error", onError);
+
+    return () => {
+      rec.removeEventListener("result", onResult);
+      rec.removeEventListener("end", onEnd);
+      rec.removeEventListener("error", onError);
+    };
+  }, [editor]);
+
+  const startListening = () => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    try {
+      lastFinalRef.current = null;
+      rec.lang = "en-US";
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.start();
+      setListening(true);
+    } catch (e) {
+      console.error("startListening error", e);
+      setListening(false);
+    }
+  };
+
+  const stopListening = () => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    try {
+      rec.stop();
+    } catch (e) {
+      console.error("stopListening error", e);
+    }
+    setListening(false);
+    setInterimText("");
+  };
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
@@ -50,7 +182,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       onClick={() => editor?.commands.focus()}
     >
       {/* Toolbar */}
-  <div className="border-b-2 border-sky-200 p-3 flex gap-1 flex-wrap bg-sky-50 rounded-t-xl">
+  <div className="relative border-b-2 border-sky-200 p-3 flex gap-1 flex-wrap bg-sky-50 rounded-t-xl">
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
@@ -87,53 +219,61 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           <span>U</span>
         </button>
 
-  <div className="w-px h-8 bg-slate-300 mx-1"></div>
+        <div className="w-px h-8 bg-slate-300 mx-1"></div>
 
+        {/* Heading button */}
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={`px-3 py-2 text-sm rounded-lg font-extrabold transition-all duration-200 flex items-center gap-1 ${
-            editor.isActive("heading", { level: 2 }) 
-              ? "bg-blue-600 text-white shadow-md" 
-              : "hover:bg-sky-200 text-blue-700"
+          className={`px-3 py-2 text-sm rounded-lg font-extrabold transition-all duration-200 ${
+            editor.isActive('heading', { level: 2 })
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'hover:bg-sky-200 text-blue-700'
           }`}
           title="Heading"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-          H2
+          <span>H1</span>
         </button>
 
   <div className="w-px h-8 bg-slate-300 mx-1"></div>
 
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-1 font-bold ${
+          className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-2 font-bold ${
             editor.isActive("bulletList") 
               ? "bg-blue-600 text-white shadow-md" 
               : "hover:bg-sky-200 text-blue-700"
           }`}
-          title="Bullet List"
+          title="Bulleted list"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          {/* Bulleted list icon: three dots with lines */}
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="6" cy="6" r="1.2" />
+            <path d="M10 6h8" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="6" cy="12" r="1.2" />
+            <path d="M10 12h8" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="6" cy="18" r="1.2" />
+            <path d="M10 18h8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          List
         </button>
 
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-1 font-bold ${
+          className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 flex items-center gap-2 font-bold ${
             editor.isActive("orderedList") 
               ? "bg-blue-600 text-white shadow-md" 
               : "hover:bg-sky-200 text-blue-700"
           }`}
-          title="Numbered List"
+          title="Numbered list"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+          {/* Numbered list icon: numbers with lines */}
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <text x="3" y="6.8" fontSize="5" fill="currentColor">1</text>
+            <path d="M10 6h8" strokeLinecap="round" strokeLinejoin="round" />
+            <text x="3" y="12.8" fontSize="5" fill="currentColor">2</text>
+            <path d="M10 12h8" strokeLinecap="round" strokeLinejoin="round" />
+            <text x="3" y="18.8" fontSize="5" fill="currentColor">3</text>
+            <path d="M10 18h8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          1-2-3
         </button>
 
         <div className="flex-1"></div>
@@ -159,11 +299,42 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
           </svg>
         </button>
+
+        {/* Mic button (aligned to right end, reusing Tasks icons) */}
+        <div className="ml-1">
+          {speechSupported ? (
+            <button
+              onClick={() => (listening ? stopListening() : startListening())}
+              aria-pressed={listening}
+              title={listening ? "Stop voice input" : "Start voice input"}
+              className="relative flex items-center justify-center w-11 h-11 rounded-xl transition-shadow focus:outline-none"
+            >
+              <span className={`${listening ? "absolute inset-0 animate-ping rounded-xl bg-blue-200/40" : ""}`} />
+              <span className={`relative z-10 inline-flex items-center justify-center rounded-lg ${listening ? "bg-red-500 text-white shadow-lg" : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"} w-11 h-11`}>
+                {!listening ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v6a3 3 0 01-6 0V1M12 1v6a3 3 0 006 0V1" opacity="0" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 14v4M8 18h8M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12" rx="2" ry="2" />
+                  </svg>
+                )}
+              </span>
+            </button>
+          ) : (
+            <div className="text-xs text-blue-400 px-2">Voice not supported</div>
+          )}
+        </div>
       </div>
 
       {/* Editor */}
       <div className="p-6 min-h-[400px] prose prose-slate max-w-none">
         <EditorContent editor={editor} />
+        {listening && interimText && (
+          <div className="mt-2 text-sm text-blue-500 italic select-none">{interimText}</div>
+        )}
       </div>
     </div>
   );

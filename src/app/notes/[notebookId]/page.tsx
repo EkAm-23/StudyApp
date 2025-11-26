@@ -76,6 +76,8 @@ export default function NotebookPage() {
   const addPageInputRef = useRef<HTMLInputElement | null>(null);
   const editInputRef = useRef<HTMLInputElement | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Handle resizing
   useEffect(() => {
@@ -264,46 +266,68 @@ export default function NotebookPage() {
     setAddingPage(false);
   };
 
-  // Debounced auto-save
-  const savePage = async (contentOverride?: string) => {
+  // Debounced title save (updates ONLY title)
+  const scheduleTitleSave = (newTitle: string) => {
     if (!selectedPage || !selectedSection || !user || !notebookId) return;
-
     setSaveStatus("saving");
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
+    if (titleSaveTimeoutRef.current) clearTimeout(titleSaveTimeoutRef.current);
 
-    saveTimeoutRef.current = setTimeout(async () => {
+    const pageId = selectedPage.id;
+    const sectionId = selectedSection;
+    const uid = user.uid;
+    const nbId = notebookId as string;
+
+    titleSaveTimeoutRef.current = setTimeout(async () => {
       await updateDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "notebooks",
-          notebookId as string,
-          "sections",
-          selectedSection as string,
-          "pages",
-          selectedPage.id
-        ),
+        doc(db, "users", uid, "notebooks", nbId, "sections", sectionId, "pages", pageId),
         {
-          content: contentOverride ?? selectedPage.content,
-          title: selectedPage.title,
+          title: newTitle, // save exactly what was typed, no trimming
           updatedAt: new Date(),
         }
       );
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1500);
-    }, 1500);
+    }, 500);
+  };
+
+  // Debounced content save (updates ONLY content)
+  const scheduleContentSave = (newContent: string) => {
+    if (!selectedPage || !selectedSection || !user || !notebookId) return;
+    setSaveStatus("saving");
+
+    if (contentSaveTimeoutRef.current) clearTimeout(contentSaveTimeoutRef.current);
+
+    const pageId = selectedPage.id;
+    const sectionId = selectedSection;
+    const uid = user.uid;
+    const nbId = notebookId as string;
+
+    contentSaveTimeoutRef.current = setTimeout(async () => {
+      await updateDoc(
+        doc(db, "users", uid, "notebooks", nbId, "sections", sectionId, "pages", pageId),
+        {
+          content: newContent,
+          updatedAt: new Date(),
+        }
+      );
+      setSaveStatus("saved");
+    }, 800);
   };
 
   // cleanup timer
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (titleSaveTimeoutRef.current) clearTimeout(titleSaveTimeoutRef.current);
+      if (contentSaveTimeoutRef.current) clearTimeout(contentSaveTimeoutRef.current);
     };
   }, []);
+
+  // Clear pending timers when switching page/section to avoid saving to wrong doc
+  useEffect(() => {
+    if (titleSaveTimeoutRef.current) clearTimeout(titleSaveTimeoutRef.current);
+    if (contentSaveTimeoutRef.current) clearTimeout(contentSaveTimeoutRef.current);
+  }, [selectedPage?.id, selectedSection]);
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-white via-sky-50 to-sky-100">
@@ -709,12 +733,12 @@ export default function NotebookPage() {
                 onChange={(e) => {
                   const t = e.target.value;
                   setSelectedPage({ ...selectedPage, title: t });
-                  savePage(t);
+                  scheduleTitleSave(t);
                 }}
               />
 
-              <div className="flex items-center gap-2 mb-4 text-sm">
-                {saveStatus === "saving" && (
+              <div className="flex items-center gap-2 mb-4 text-sm h-6">
+                {saveStatus === "saving" ? (
                   <span className="flex items-center text-slate-500">
                     <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -722,8 +746,7 @@ export default function NotebookPage() {
                     </svg>
                     Saving...
                   </span>
-                )}
-                {saveStatus === "saved" && (
+                ) : (
                   <span className="flex items-center text-blue-600">
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -737,7 +760,7 @@ export default function NotebookPage() {
                 content={selectedPage.content}
                 onChange={(c) => {
                   setSelectedPage({ ...selectedPage, content: c });
-                  savePage(c);
+                  scheduleContentSave(c);
                 }}
               />
             </div>

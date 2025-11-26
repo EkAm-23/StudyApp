@@ -185,15 +185,15 @@ export default function NotesPage() {
             {notebooks.map((notebook) => (
               <motion.div
                 key={notebook.id}
-                initial={{ opacity: 0, y: 40 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
                 onClick={() => router.push(`/notes/${notebook.id}`)}
-                  className="group relative p-6 bg-white/90 rounded-xl shadow-md hover:shadow-xl cursor-pointer border border-blue-100 hover:border-blue-600 hover:-translate-y-1 transform transition-all duration-500 ease-in-out"
+                  className="group relative p-6 bg-white/90 rounded-xl shadow-md hover:shadow-xl cursor-pointer border border-blue-100 hover:border-blue-600 hover:-translate-y-1 transform transition-all duration-250 ease-out"
               >
                 {/* Delete cross like sections/pages */}
                 <button
-                  className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center shadow-sm"
+                  className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black hover:bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center shadow-sm"
                   title="Delete notebook"
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -205,12 +205,14 @@ export default function NotesPage() {
                 </button>
                 
                 <div className="mb-3">
-                  <div className="w-12 h-12 rounded-lg bg-blue-600 flex items-center justify-center mb-4 transition-colors duration-500 ease-in-out group-hover:bg-blue-700">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <motion.div initial={{ y: 6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.18 }}>
+                    <div className="w-12 h-12 rounded-lg bg-blue-600 flex items-center justify-center mb-4 transition-colors duration-250 ease-out group-hover:bg-blue-700">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                     </svg>
-                  </div>
-                  <h2 className="text-xl font-semibold text-blue-700 group-hover:text-blue-600 transition-colors duration-500 ease-in-out line-clamp-2">
+                    </div>
+                  </motion.div>
+                  <h2 className="text-xl font-semibold text-blue-700 group-hover:text-blue-600 transition-colors duration-300 ease-in-out line-clamp-2">
                     {notebook.title}
                   </h2>
                 </div>
