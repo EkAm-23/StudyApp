@@ -224,7 +224,7 @@ export default function ProgressPage() {
         <ProgressCard label="Daily Progress" percent={dailyPercent} colors={["#38bdf8", "#0ea5e9"]} />
         <ProgressCard label="Weekly Progress" percent={weeklyPercent} colors={["#22c55e", "#84cc16"]} />
         <motion.div
-          className="bg-white/80 rounded-2xl shadow-md p-6 text-center backdrop-blur-md"
+            className="bg-indigo-50/70 rounded-2xl shadow-sm p-6 text-center border border-indigo-100"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -234,7 +234,7 @@ export default function ProgressPage() {
         </motion.div>
 
         <motion.div
-          className="bg-white/80 rounded-2xl shadow-md p-6 text-center backdrop-blur-md"
+            className="bg-sky-50/70 rounded-2xl shadow-sm p-6 text-center border border-sky-100"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -250,7 +250,7 @@ export default function ProgressPage() {
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Daily Completed: only today */}
         <motion.div
-          className="bg-white/85 rounded-2xl p-5 shadow-lg border border-blue-50"
+          className="bg-white/70 rounded-2xl p-5 shadow-sm border border-indigo-100"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -265,7 +265,7 @@ export default function ProgressPage() {
             {daysWindow.map((d) => {
               const items = tasksOnDay(d).filter((t) => t.category === "daily");
               return (
-                <div key={d.toDateString()} className="p-3 rounded-xl bg-white/80 border border-blue-50 shadow-sm">
+                <div key={d.toDateString()} className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div>
                       <div className="text-sm font-semibold">{d.toDateString()}</div>
@@ -279,7 +279,7 @@ export default function ProgressPage() {
                   ) : (
                     <ul className="space-y-2">
                       {items.map((t) => (
-                        <li key={t.id} className="flex justify-between items-start bg-white/90 rounded-md p-2 border border-blue-50">
+                        <li key={t.id} className="flex justify-between items-start bg-white/80 rounded-md p-2 border border-indigo-100">
                           <div>
                             <div className="font-medium text-blue-800">{t.title}</div>
                             {t.durationMinutes ? <div className="text-xs text-gray-600 mt-1">{t.durationMinutes} min</div> : null}
@@ -297,7 +297,7 @@ export default function ProgressPage() {
 
         {/* Weekly Completed: only this week */}
         <motion.div
-          className="bg-white/85 rounded-2xl p-5 shadow-lg border border-blue-50"
+          className="bg-white/70 rounded-2xl p-5 shadow-sm border border-sky-100"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -312,7 +312,7 @@ export default function ProgressPage() {
             {weeksWindow.map((w, idx) => {
               const items = tasksInWeek(w.start, w.end).filter((t) => t.category === "weekly");
               return (
-                <div key={`${w.start.toDateString()}-${idx}`} className="p-3 rounded-xl bg-white/80 border border-blue-50 shadow-sm">
+                <div key={`${w.start.toDateString()}-${idx}`} className="p-3 rounded-xl bg-sky-50/60 border border-sky-100 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div>
                       <div className="text-sm font-semibold">{formatWeekLabel(w.start, w.end)}</div>
@@ -326,7 +326,7 @@ export default function ProgressPage() {
                   ) : (
                     <ul className="space-y-2">
                       {items.map((t) => (
-                        <li key={t.id} className="flex justify-between items-start bg-white/90 rounded-md p-2 border border-blue-50">
+                        <li key={t.id} className="flex justify-between items-start bg-white/80 rounded-md p-2 border border-sky-100">
                           <div>
                             <div className="font-medium text-blue-800">{t.title}</div>
                             {t.durationMinutes ? <div className="text-xs text-gray-600 mt-1">{t.durationMinutes} min</div> : null}
