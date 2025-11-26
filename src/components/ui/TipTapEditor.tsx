@@ -56,6 +56,9 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
 
+  // Summarize loading state
+  const [summarizing, setSummarizing] = useState(false);
+
   // Feature detect Web Speech API
   useEffect(() => {
     const win = typeof window !== "undefined" ? (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }) : undefined;
@@ -166,6 +169,29 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
     }
     setListening(false);
     setInterimText("");
+  };
+
+  const summarizePage = async () => {
+    if (!editor || summarizing) return;
+    setSummarizing(true);
+    const pageText = editor.getText();
+    try {
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: pageText }),
+      });
+      const data = await res.json();
+      const summary = (data?.summary as string) || "";
+      if (summary) {
+        const html = `<h2>Summarised page contents</h2><div>${summary.replace(/\n/g, '<br/>')}</div>`;
+        editor.chain().focus().insertContent(html).run();
+      }
+    } catch (e) {
+      console.error("Summarize error", e);
+    } finally {
+      setSummarizing(false);
+    }
   };
 
   useEffect(() => {
@@ -301,7 +327,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
         </button>
 
         {/* Mic button (aligned to right end, reusing Tasks icons) */}
-        <div className="ml-1">
+        <div className="ml-1 flex items-center gap-1">
           {speechSupported ? (
             <button
               onClick={() => (listening ? stopListening() : startListening())}
@@ -326,6 +352,28 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
           ) : (
             <div className="text-xs text-blue-400 px-2">Voice not supported</div>
           )}
+
+          {/* Summarize button */}
+          <button
+            onClick={summarizePage}
+            title={summarizing ? "Summarizing..." : "Summarize page"}
+            disabled={summarizing}
+            className={`relative inline-flex items-center justify-center w-11 h-11 rounded-lg shadow-sm transition-colors ${summarizing ? 'bg-indigo-300 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700'} text-white disabled:opacity-70 disabled:cursor-wait`}
+          >
+            {summarizing ? (
+              // Spinner
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+                <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" />
+              </svg>
+            ) : (
+              // Sparkle icon
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 13l.8 2.2L22 16l-2.2.8L19 19l-.8-2.2L16 16l2.2-.8L19 13z" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
