@@ -10,7 +10,8 @@ import {
   orderBy,
   doc,
   deleteDoc,
-  updateDoc,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -23,13 +24,19 @@ interface Task {
   category: "daily" | "weekly" | "general";
   completed?: boolean;
   userId?: string;
+  // other optional fields...
 }
 
 export default function CalendarPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  // Capture the base month date once to avoid SSR/CSR mismatch
+  const [currentDate, setCurrentDate] = useState(() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return d;
+  });
 
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
@@ -48,18 +55,23 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!userId) return;
 
-    const tasksQuery = query(
-      collection(db, "tasks"),
-      orderBy("createdAt", "desc")
-    );
+    const tasksQuery = query(collection(db, "tasks"), orderBy("createdAt", "desc"));
 
     const unsub = onSnapshot(tasksQuery, (snap) => {
-      const data = snap.docs
-        .map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }))
-        .filter((t: any) => t.userId === userId) as Task[];
+      const data: Task[] = snap.docs
+        .map((d) => {
+          const raw = d.data();
+          return {
+            id: d.id,
+            title: (raw.title ?? raw.task ?? "") as string,
+            deadline: raw.deadline as string | undefined,
+            createdAt: raw.createdAt,
+            category: (raw.category as Task["category"]) ?? "general",
+            completed: Boolean(raw.completed),
+            userId: raw.userId as string | undefined,
+          };
+        })
+        .filter((t) => t.userId === userId);
 
       console.log("📡 Loaded tasks:", data);
       setTasks(data);
@@ -82,7 +94,7 @@ export default function CalendarPage() {
   const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
   // --- Filter logic for tasks per day ---
-  // Modified: weekly tasks now show ONLY on the nearest upcoming Sunday (including same day if createdAt is a Sunday)
+  // weekly tasks shown on nearest upcoming Sunday (including same day if createdAt is Sunday)
   const getTasksForDay = (day: Date) => {
     return tasks.filter((t) => {
       const createdAt =
@@ -112,24 +124,52 @@ export default function CalendarPage() {
   };
 
   // --- Firestore task actions ---
+  // Move task to completedTasks collection and delete from tasks collection.
   const markTaskCompleted = async (task: Task) => {
-    const collectionName = "tasks";
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, completed: true } : t))
-    );
-    setSelectedTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, completed: true } : t))
-    );
+    if (!userId || !task.id) return;
 
-    await updateDoc(doc(db, collectionName, task.id), { completed: true });
-  };
-
-  const deleteTask = async (task: Task) => {
-    const collectionName = "tasks";
+    // Optimistic UI update: remove from local lists immediately for snappy UX
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
     setSelectedTasks((prev) => prev.filter((t) => t.id !== task.id));
 
-    await deleteDoc(doc(db, collectionName, task.id));
+    try {
+      // add to completedTasks
+      await addDoc(collection(db, "completedTasks"), {
+        userId: task.userId ?? userId,
+        title: task.title,
+        category: task.category,
+        deadline: task.deadline ?? null,
+        createdAt: task.createdAt ?? serverTimestamp(),
+        completedAt: serverTimestamp(),
+      });
+
+      // delete original task
+      await deleteDoc(doc(db, "tasks", task.id));
+    } catch (err) {
+      console.error("markTaskCompleted error:", err);
+      // revert optimistic update on error
+      // (attempt to refetch / re-add would be better; here we just re-add locally)
+      setTasks((prev) => [task, ...prev]);
+      setSelectedTasks((prev) => [task, ...prev]);
+      alert("Could not mark task completed. Check console for details.");
+    }
+  };
+
+  const deleteTask = async (task: Task) => {
+    if (!userId || !task.id) return;
+    // Optimistic UI update
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    setSelectedTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+    try {
+      await deleteDoc(doc(db, "tasks", task.id));
+    } catch (err) {
+      console.error("deleteTask error:", err);
+      // revert
+      setTasks((prev) => [task, ...prev]);
+      setSelectedTasks((prev) => [task, ...prev]);
+      alert("Could not delete task. Check console.");
+    }
   };
 
   return (
@@ -162,10 +202,10 @@ export default function CalendarPage() {
               ◀
             </button>
             <h2 className="text-2xl font-semibold text-blue-700">
-              {currentDate.toLocaleString("default", {
-                month: "long",
-                year: "numeric",
-              })}
+              {(() => {
+                const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                return `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+              })()}
             </h2>
             <button
               onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
@@ -196,7 +236,6 @@ export default function CalendarPage() {
                     setSelectedTasks(tasksForDay);
                     setIsPanelOpen(true);
                   }}
-                  // note: 'group' added so inner hover controls (like show action buttons) work with group-hover
                   className={`group min-h-[90px] rounded-xl p-2 flex flex-col items-start justify-start transition-all cursor-pointer
                     border border-blue-100 group-hover:border-blue-600 hover:shadow-md hover:translate-y-0.5
                     ${
@@ -272,26 +311,29 @@ export default function CalendarPage() {
             {selectedTasks.map((task) => (
               <li
                 key={task.id}
-                className={`group bg-white/80 rounded-lg p-3 flex justify-between items-center relative transition border border-blue-50 ${
-                  task.completed ? "opacity-60 line-through" : ""
-                }`}
+                className={`group bg-white/80 rounded-lg p-3 flex justify-between items-center relative transition border border-blue-50`}
               >
                 <div>
-                  <p className="font-semibold text-blue-700">{task.title}</p>
+                  <p className={`font-semibold text-blue-700 ${task.completed ? "line-through opacity-60" : ""}`}>{task.title}</p>
                   <p className="text-sm text-blue-500">{task.category}</p>
                 </div>
 
                 <div className="flex gap-2 absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
                   {!task.completed && (
                     <button
-                      onClick={() => markTaskCompleted(task)}
+                      onClick={async () => {
+                        // prevent double-click or race by disabling UI quickly
+                        await markTaskCompleted(task);
+                      }}
                       className="bg-emerald-500 hover:bg-emerald-600 px-2 py-1 rounded text-sm text-white transition"
                     >
                       ✓
                     </button>
                   )}
                   <button
-                    onClick={() => deleteTask(task)}
+                    onClick={async () => {
+                      await deleteTask(task);
+                    }}
                     className="bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-sm text-white transition"
                   >
                     🗑️

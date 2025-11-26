@@ -1,5 +1,7 @@
 "use client";
 
+import jsPDF from "jspdf";
+
 import { useEffect, useRef, useState } from "react";
 import {
   collection,
@@ -12,6 +14,7 @@ import {
   where,
   serverTimestamp,
   getDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -19,15 +22,20 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
 interface Task {
-  id: string;
+  id?: string;
   title?: string;
   task?: string;
   createdAt?: string | any;
   deadline?: string | any;
   category?: "daily" | "weekly" | "general" | string;
   userId?: string;
+  plannedFor?: string | any;
+  durationMinutes?: number | null;
 }
 
+/* -------------------------
+   Helpers
+--------------------------*/
 function toDateSafe(v: any): Date | null {
   if (!v) return null;
   if (typeof v?.toDate === "function") return v.toDate();
@@ -51,7 +59,17 @@ function collapseRepeatedWords(s: string) {
   }
   return out.join(" ");
 }
+// YYYY-MM-DD local key
+function dateKeyLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
 
+/* -------------------------
+   Component
+--------------------------*/
 export default function TasksPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -74,7 +92,13 @@ export default function TasksPage() {
   const recognitionRef = useRef<any>(null);
   const lastFinalRef = useRef<string | null>(null);
 
-  // feature detect
+  // Scheduler UI state
+  const [plan, setPlan] = useState<any | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
+  const [planOptions, setPlanOptions] = useState({ windowDays: 7, maxMinutesPerDay: 240 });
+
+  // detect speech API
   useEffect(() => {
     const win = typeof window !== "undefined" ? (window as any) : undefined;
     const SpeechRecognition = win?.webkitSpeechRecognition || win?.SpeechRecognition || null;
@@ -200,6 +224,7 @@ export default function TasksPage() {
           deadline: data.deadline,
           createdAt: data.createdAt,
           userId: data.userId,
+          plannedFor: data.plannedFor ?? null,
           ...data,
         } as Task;
       });
@@ -208,6 +233,7 @@ export default function TasksPage() {
       setWeeklyTasks(docs.filter((t) => t.category === "weekly"));
       setGeneralTasks(docs.filter((t) => t.category === "general" || !t.category));
 
+      // move overdue tasks to incompleteTasks (existing behavior)
       for (const d of snap.docs) {
         const data = d.data() as any;
         const id = d.id;
@@ -248,6 +274,7 @@ export default function TasksPage() {
           completedAt: data.completedAt,
           createdAt: data.createdAt,
           userId: data.userId,
+          durationMinutes: data.durationMinutes ?? null,
         } as Task;
       });
       setCompletedTasks(docs);
@@ -259,7 +286,7 @@ export default function TasksPage() {
     };
   }, [userId]);
 
-  // actions
+  // actions: add / delete
   const handleAddTask = async () => {
     if (listening) {
       stopListening();
@@ -285,17 +312,36 @@ export default function TasksPage() {
       console.error("delete task error:", err);
     }
   };
+
+  // move to completed with optional duration prompt
   const moveToCompleted = async (task: Task) => {
     if (!userId || !task.id) return;
     try {
-      await addDoc(collection(db, "completedTasks"), {
+      // Ask user for duration (minutes). Optional — Cancel skips.
+      const raw = prompt(
+        `How many minutes did you spend on "${task.title}"? (optional — press Cancel to skip)`
+      );
+
+      let durationMinutes: number | null = null;
+      if (raw !== null) {
+        const cleaned = raw.trim();
+        if (cleaned.length > 0) {
+          const n = parseInt(cleaned, 10);
+          if (!Number.isNaN(n) && n > 0) durationMinutes = n;
+        }
+      }
+
+      const payload: any = {
         userId,
         title: task.title ?? task.task ?? "",
         category: task.category ?? "general",
         deadline: task.deadline ?? null,
         createdAt: task.createdAt ?? serverTimestamp(),
         completedAt: serverTimestamp(),
-      });
+      };
+      if (durationMinutes) payload.durationMinutes = durationMinutes;
+
+      await addDoc(collection(db, "completedTasks"), payload);
       await deleteDoc(doc(db, "tasks", task.id));
     } catch (err) {
       console.error("moveToCompleted error:", err);
@@ -303,6 +349,7 @@ export default function TasksPage() {
   };
 
   // stats & displayed
+  const completedWithDurCount = completedTasks.filter((t) => t.durationMinutes && t.durationMinutes > 0).length;
   const completedDaily = completedTasks.filter((t) => t.category === "daily").length;
   const completedWeekly = completedTasks.filter((t) => t.category === "weekly").length;
   const totalDaily = dailyTasks.length + completedDaily;
@@ -317,6 +364,225 @@ export default function TasksPage() {
   const totalOverdueCount = [...dailyTasks, ...weeklyTasks, ...generalTasks].filter((t) => isOverdue(t)).length;
   const displayedList = activeFilter === "daily" ? dailyTasks : activeFilter === "weekly" ? weeklyTasks : generalTasks;
 
+  /* -------------------------
+     Non-AI Scheduler (mathematical rules)
+     - runs locally (no API)
+     - DAILY tasks placed only on TODAY (index 0)
+  --------------------------*/
+  const generatePlan = async (opts = { windowDays: 7, maxMinutesPerDay: 240 }) => {
+    setPlanLoading(true);
+    setPlan(null);
+    try {
+      const windowDays = Number(opts.windowDays || 7);
+      const maxMinutesPerDay = Number(opts.maxMinutesPerDay || 240);
+
+      // build days array starting from user's local today
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const days: { date: string; minutesUsed: number; tasks: any[] }[] = [];
+      for (let i = 0; i < windowDays; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        days.push({ date: dateKeyLocal(d), minutesUsed: 0, tasks: [] });
+      }
+
+      // helper for predicted duration (simple deterministic rules)
+      function predictDurationDefault(task: Task) {
+        if (task.durationMinutes && typeof task.durationMinutes === "number") return Math.max(1, Math.round(task.durationMinutes));
+        if (task.category === "daily") return 15;
+        if (task.category === "weekly") return 60;
+        return 45; // general
+      }
+
+      // 1) Place DAILY tasks: only on TODAY (index 0)
+      const todayBucket = days[0];
+      for (const t of dailyTasks) {
+        const dur = predictDurationDefault(t);
+        todayBucket.tasks.push({ ...t, predictedDuration: dur, recurring: false });
+        todayBucket.minutesUsed += dur;
+      }
+
+      // 2) Place WEEKLY tasks: distribute evenly across windowDays
+      if (weeklyTasks.length > 0) {
+        const n = weeklyTasks.length;
+        const indices = weeklyTasks.map((_, i) => {
+          let idx = Math.round(((i + 1) * windowDays) / (n + 1)) - 1;
+          if (idx < 0) idx = 0;
+          if (idx >= windowDays) idx = windowDays - 1;
+          return idx;
+        });
+
+        for (let i = 0; i < weeklyTasks.length; i++) {
+          const t = weeklyTasks[i];
+          const dur = predictDurationDefault(t);
+          let targetIdx = indices[i];
+
+          if (t.deadline) {
+            const dl = toDateSafe(t.deadline);
+            if (dl) {
+              let found = -1;
+              for (let j = 0; j < days.length; j++) {
+                const parts = days[j].date.split("-").map((x) => parseInt(x, 10));
+                const dayDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                if (dayDate.getTime() <= dl.getTime()) found = j;
+              }
+              if (found !== -1) targetIdx = found;
+            }
+          }
+
+          let placed = false;
+          for (let offset = 0; offset < windowDays; offset++) {
+            const idx = (targetIdx + offset) % windowDays;
+            if (days[idx].minutesUsed + dur <= maxMinutesPerDay) {
+              days[idx].tasks.push({ ...t, predictedDuration: dur });
+              days[idx].minutesUsed += dur;
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            let best = days[0];
+            for (const d of days) if (d.minutesUsed < best.minutesUsed) best = d;
+            best.tasks.push({ ...t, predictedDuration: dur });
+            best.minutesUsed += dur;
+          }
+        }
+      }
+
+      // 3) Place GENERAL tasks: earliest available day before deadline else least-loaded
+      const generalSorted = [...generalTasks].sort((a, b) => {
+        const ad = toDateSafe(a.deadline);
+        const bd = toDateSafe(b.deadline);
+        if (ad && bd) return ad.getTime() - bd.getTime();
+        if (ad && !bd) return -1;
+        if (!ad && bd) return 1;
+        const at = toDateSafe(a.createdAt) ?? new Date(0);
+        const bt = toDateSafe(b.createdAt) ?? new Date(0);
+        return at.getTime() - bt.getTime();
+      });
+
+      for (const t of generalSorted) {
+        const dur = predictDurationDefault(t);
+
+        let candidates = days;
+        if (t.deadline) {
+          const dl = toDateSafe(t.deadline);
+          if (dl) {
+            candidates = days.filter((d) => {
+              const parts = d.date.split("-").map((x) => parseInt(x, 10));
+              const dayDate = new Date(parts[0], parts[1] - 1, parts[2]);
+              return dayDate.getTime() <= dl.getTime();
+            });
+            if (candidates.length === 0) candidates = days;
+          }
+        }
+
+        let placed = false;
+        for (const day of candidates) {
+          if (day.minutesUsed + dur <= maxMinutesPerDay) {
+            day.tasks.push({ ...t, predictedDuration: dur });
+            day.minutesUsed += dur;
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          let best = candidates[0];
+          for (const d of candidates) if (d.minutesUsed < best.minutesUsed) best = d;
+          best.tasks.push({ ...t, predictedDuration: dur });
+          best.minutesUsed += dur;
+        }
+      }
+
+      // final pass: compute buckets + summary
+      const buckets: Record<string, any[]> = {};
+      const summary = days.map((d) => {
+        const overflow = d.minutesUsed > maxMinutesPerDay;
+        buckets[d.date] = d.tasks;
+        return { date: d.date, count: d.tasks.length, minutes: d.minutesUsed, overflow, tasks: d.tasks };
+      });
+
+      setPlan({ buckets, summary });
+      setPlanOptions(opts);
+      setIsPlanOpen(true);
+    } catch (err) {
+      console.error("generatePlan error", err);
+      alert("Could not create plan — check console.");
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+  
+
+const downloadPlanPDF = () => {
+  if (!plan) return alert("No plan to download");
+
+  const doc = new jsPDF();
+  let y = 10;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Study Plan", 10, y);
+  y += 10;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(12);
+
+  plan.summary.forEach((day: any) => {
+    const dateStr = new Date(day.date).toDateString();
+
+    // Day header
+    doc.setFont("helvetica", "bold");
+    doc.text(`${dateStr}`, 10, y);
+    y += 6;
+
+    doc.setFont("helvetica", "normal");
+    doc.text(`Tasks: ${day.count}   Time: ${day.minutes} min`, 10, y);
+    y += 6;
+
+    day.tasks.forEach((t: any) => {
+      const line = `• ${t.title} (${t.category}, ${t.predictedDuration} min)`;
+      doc.text(line, 14, y);
+      y += 6;
+
+      // If almost full, create new page
+      if (y > 270) {
+        doc.addPage();
+        y = 10;
+      }
+    });
+
+    y += 4; // spacing between days
+  });
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  doc.save(`study-plan-${stamp}.pdf`);
+};
+
+  const downloadPlan = () => {
+  if (!plan) return alert("No plan to download");
+  try {
+    const json = JSON.stringify(plan, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `plan-${planOptions.windowDays}d-${dateStamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error("downloadPlan error", e);
+    alert("Could not download plan.");
+  }
+};
+
+  /* -------------------------
+     Render
+  --------------------------*/
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-sky-100 to-emerald-100 text-blue-700 flex flex-col items-center py-12 px-4">
       <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -369,12 +635,26 @@ export default function TasksPage() {
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-400">My Study Tasks</span>
           </motion.h1>
 
+          {/* small banner when very few duration data points exist */}
+          {completedWithDurCount < 5 && (
+            <div className="mb-4 rounded-lg bg-yellow-50 border border-yellow-100 p-3 text-sm text-yellow-800">
+              Scheduler is deterministic (no ML). It will improve if you annotate durations when completing tasks.
+            </div>
+          )}
+
           <div className="mb-6 lg:hidden">
             <div className="flex gap-2">
-              <button onClick={() => setActiveFilter("daily")} className={`px-3 py-2 rounded-lg border ${activeFilter === "daily" ? "border-blue-300 bg-white/90" : "border-blue-50 bg-white/80"}`}>Daily</button>
-              <button onClick={() => setActiveFilter("weekly")} className={`px-3 py-2 rounded-lg border ${activeFilter === "weekly" ? "border-blue-300 bg-white/90" : "border-blue-50 bg-white/80"}`}>Weekly</button>
-              <button onClick={() => setActiveFilter("general")} className={`px-3 py-2 rounded-lg border ${activeFilter === "general" ? "border-blue-300 bg-white/90" : "border-blue-50 bg-white/80"}`}>General</button>
-            </div>
+  <button onClick={() => { setIsPlanOpen(false); setPlan(null); }} className="text-sm px-3 py-1 rounded">Close</button>
+
+  {/* NEW: download button */}
+  <button
+    onClick={() => downloadPlan()}
+    className="bg-blue-600 text-white px-3 py-1 rounded"
+    title="Download plan as JSON"
+  >
+    Download Plan
+  </button>
+</div>
           </div>
 
           {/* Input Section */}
@@ -413,10 +693,8 @@ export default function TasksPage() {
                     title={listening ? "Stop voice input" : "Start voice input (daily tasks only)"}
                     className="relative flex items-center justify-center w-11 h-11 rounded-xl transition-shadow focus:outline-none"
                   >
-                    {/* pulse ring when listening */}
                     <span className={`${listening ? "absolute inset-0 animate-ping rounded-xl bg-blue-200/40" : ""}`} />
                     <span className={`relative z-10 inline-flex items-center justify-center rounded-lg ${listening ? "bg-red-500 text-white shadow-lg" : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"} w-11 h-11`}>
-                      {/* mic vs stop SVG */}
                       {!listening ? (
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v6a3 3 0 01-6 0V1M12 1v6a3 3 0 006 0V1" opacity="0" />
@@ -434,7 +712,11 @@ export default function TasksPage() {
                 )}
               </div>
 
-              <button onClick={handleAddTask} className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-xl shadow-md transition-all text-white">Add</button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleAddTask} className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-xl shadow-md transition-all text-white">Add</button>
+
+                {/* Generate Plan button */}
+              </div>
             </div>
           </div>
 
@@ -451,11 +733,112 @@ export default function TasksPage() {
           </div>
         </main>
       </div>
+
+      {/* Plan slide-over (drop-in with stopPropagation & z-index) */}
+      {isPlanOpen && plan && (
+        <div
+          className="fixed inset-0 z-50 flex"
+          aria-modal="true"
+          role="dialog"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 z-40"
+            onClick={() => setIsPlanOpen(false)}
+          />
+
+          {/* Panel */}
+          <div
+            className="ml-auto w-full sm:w-[620px] bg-white rounded-l-2xl p-6 overflow-y-auto text-blue-800 shadow-2xl z-50"
+            onClick={(e) => e.stopPropagation()}
+            role="document"
+          >
+            <div className="flex gap-2">
+            <button
+              onClick={() => { setIsPlanOpen(false); setPlan(null); }}
+              className="text-sm px-3 py-1 rounded"
+            >
+              Close
+            </button>
+
+            <button
+              onClick={downloadPlanPDF}
+              className="bg-blue-600 text-white px-3 py-1 rounded"
+            >
+              Download PDF
+            </button>
+          </div>
+
+            <div className="space-y-4">
+              {plan.summary.map((day: any) => (
+                <div key={day.date} className="p-3 rounded-xl bg-white/90 border border-blue-50 shadow-sm">
+                  <div className="flex justify-between items-center mb-2">
+                    <div>
+                      <div className="text-sm font-semibold">{new Date(day.date).toDateString()}</div>
+                      <div className="text-xs text-blue-500">{day.count} tasks — {day.minutes} min {day.overflow ? " • OVERLOADED" : ""}</div>
+                    </div>
+                    <div className="text-right text-xs">
+                      {day.overflow ? <span className="text-red-600 font-bold">Overflow</span> : <span className="text-green-600">OK</span>}
+                    </div>
+                  </div>
+
+                  <ul className="space-y-2">
+                    {day.tasks.map((t: any, idx: number) => (
+                      <li key={idx} className="p-2 rounded-lg bg-blue-50/40 flex justify-between items-center">
+                        <div>
+                          <div className="font-medium text-blue-800">{t.title}</div>
+                          <div className="text-xs text-blue-500">{t.category}{t.recurring ? " • recurring" : ""} • {t.predictedDuration}m</div>
+                        </div>
+                        <div className="text-xs text-blue-600">
+                          {t.forceDate ? <span className="px-2 py-0.5 bg-yellow-100 rounded">Fixed</span> : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Floating Generate Plan Button */}
+<button
+  onClick={() => generatePlan(planOptions)}
+  disabled={planLoading}
+  className="
+    fixed bottom-8 right-8
+    bg-blue-600 hover:bg-blue-700
+    text-white shadow-xl
+    px-5 py-3 rounded-2xl
+    text-sm font-medium
+    transition-all
+    z-[60]
+  "
+>
+  {planLoading ? "Generating…" : "Generate Plan"}
+</button>
     </div>
   );
 }
 
-function TaskSection({ title, tasks, colorStart, colorEnd, onComplete, onDelete }: { title: string; tasks: Task[]; colorStart: string; colorEnd: string; onComplete: (t: Task) => void; onDelete: (id: string) => void; }) {
+/* -------------------------
+   TaskSection child
+--------------------------*/
+function TaskSection({
+  title,
+  tasks,
+  colorStart,
+  colorEnd,
+  onComplete,
+  onDelete,
+}: {
+  title: string;
+  tasks: Task[];
+  colorStart: string;
+  colorEnd: string;
+  onComplete: (t: Task) => void;
+  onDelete: (id: string) => void;
+}) {
   function isOverdue(task: Task) {
     if (!task.deadline) return false;
     const d = toDateSafe(task.deadline);
@@ -464,7 +847,12 @@ function TaskSection({ title, tasks, colorStart, colorEnd, onComplete, onDelete 
   }
 
   return (
-    <motion.div className={`p-5 rounded-2xl shadow-lg bg-gradient-to-br ${colorStart} ${colorEnd} text-blue-800 border border-blue-100`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
+    <motion.div
+      className={`p-5 rounded-2xl shadow-lg bg-gradient-to-br ${colorStart} ${colorEnd} text-blue-800 border border-blue-100`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45 }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-semibold">{title}</h2>
         <div className="text-sm text-blue-600 font-medium">{tasks.length} items</div>
