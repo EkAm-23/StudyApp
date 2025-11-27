@@ -274,7 +274,9 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       const summary = (data?.summary as string) || "";
       if (summary) {
         const html = `<h2>Summarised page contents</h2><div>${summary.replace(/\n/g, '<br/>')}</div>`;
-        editor.chain().focus().insertContent(html).run();
+        // Insert at the end of the document instead of at cursor
+        const endPos = editor.state.doc.content.size;
+        editor.chain().insertContentAt(endPos, html).run();
       }
     } catch (e) {
       console.error("Summarize error", e);
