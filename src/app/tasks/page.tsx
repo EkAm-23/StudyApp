@@ -349,19 +349,9 @@ export default function TasksPage() {
   };
 
   // stats & displayed
-  const completedWithDurCount = completedTasks.filter((t) => t.durationMinutes && t.durationMinutes > 0).length;
-  const completedDaily = completedTasks.filter((t) => t.category === "daily").length;
-  const completedWeekly = completedTasks.filter((t) => t.category === "weekly").length;
-  const totalDaily = dailyTasks.length + completedDaily;
-  const totalWeekly = weeklyTasks.length + completedWeekly;
-  const dailyPercent = totalDaily ? Math.round((completedDaily / totalDaily) * 100) : 0;
-  const weeklyPercent = totalWeekly ? Math.round((completedWeekly / totalWeekly) * 100) : 0;
-  function isOverdue(task: Task) {
-    if (!task.deadline) return false;
-    return isDeadlinePassed(task.deadline);
-  }
-  const totalCompletedCount = completedTasks.length;
-  const totalOverdueCount = [...dailyTasks, ...weeklyTasks, ...generalTasks].filter((t) => isOverdue(t)).length;
+  // completed breakdown not used here
+  // percents not displayed on this page
+  // totals not displayed on this page
   const displayedList = activeFilter === "daily" ? dailyTasks : activeFilter === "weekly" ? weeklyTasks : generalTasks;
 
   /* -------------------------
@@ -538,11 +528,11 @@ const downloadPlanPDF = () => {
     y += 6;
 
     doc.setFont("helvetica", "normal");
-    doc.text(`Tasks: ${day.count}   Time: ${day.minutes} min`, 10, y);
+    doc.text(`Tasks: ${day.count}`, 10, y);
     y += 6;
 
     day.tasks.forEach((t: any) => {
-      const line = `• ${t.title} (${t.category}, ${t.predictedDuration} min)`;
+      const line = `• ${t.title} (${t.category})`;
       doc.text(line, 14, y);
       y += 6;
 
@@ -635,12 +625,7 @@ const downloadPlanPDF = () => {
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-400">My Study Tasks</span>
           </motion.h1>
 
-          {/* small banner when very few duration data points exist */}
-          {completedWithDurCount < 5 && (
-            <div className="mb-4 rounded-lg bg-yellow-50 border border-yellow-100 p-3 text-sm text-yellow-800">
-              Scheduler is deterministic (no ML). It will improve if you annotate durations when completing tasks.
-            </div>
-          )}
+          {/* Removed banner message about scheduler determinism */}
 
           <div className="mb-6 lg:hidden">
             <div className="flex gap-2">
@@ -775,7 +760,7 @@ const downloadPlanPDF = () => {
                   <div className="flex justify-between items-center mb-2">
                     <div>
                       <div className="text-sm font-semibold">{new Date(day.date).toDateString()}</div>
-                      <div className="text-xs text-blue-500">{day.count} tasks — {day.minutes} min {day.overflow ? " • OVERLOADED" : ""}</div>
+                      <div className="text-xs text-blue-500">{day.count} tasks {day.overflow ? " • OVERLOADED" : ""}</div>
                     </div>
                     <div className="text-right text-xs">
                       {day.overflow ? <span className="text-red-600 font-bold">Overflow</span> : <span className="text-green-600">OK</span>}
@@ -787,7 +772,7 @@ const downloadPlanPDF = () => {
                       <li key={idx} className="p-2 rounded-lg bg-blue-50/40 flex justify-between items-center">
                         <div>
                           <div className="font-medium text-blue-800">{t.title}</div>
-                          <div className="text-xs text-blue-500">{t.category}{t.recurring ? " • recurring" : ""} • {t.predictedDuration}m</div>
+                          <div className="text-xs text-blue-500">{t.category}{t.recurring ? " • recurring" : ""}</div>
                         </div>
                         <div className="text-xs text-blue-600">
                           {t.forceDate ? <span className="px-2 py-0.5 bg-yellow-100 rounded">Fixed</span> : null}

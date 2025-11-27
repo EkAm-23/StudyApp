@@ -147,9 +147,16 @@ export default function ProgressPage() {
 
   // ---- Progress Calculation using activeTasks + completedTasks ----
   useEffect(() => {
-    const completedDaily = completedTasks.filter((t) => t.category === "daily").length;
-    const completedWeekly = completedTasks.filter((t) => t.category === "weekly").length;
+    // Scope completed counts to the visible day/week windows so the
+    // dashboard shows progress for TODAY and THIS WEEK only.
+    const today = daysWindow[0];
+    const week = weeksWindow[0];
 
+    // completed tasks that occurred today / this week
+    const completedDaily = tasksOnDay(today).filter((t) => t.category === "daily").length;
+    const completedWeekly = tasksInWeek(week.start, week.end).filter((t) => t.category === "weekly").length;
+
+    // active tasks of those categories (assumed relevant for the current day/week)
     const activeDaily = activeTasks.filter((t) => t.category === "daily").length;
     const activeWeekly = activeTasks.filter((t) => t.category === "weekly").length;
 
@@ -210,7 +217,7 @@ export default function ProgressPage() {
      UI
   --------------------------*/
   return (
-    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-sky-100 to-emerald-50 text-gray-900 flex flex-col items-center py-12 px-4">
+    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-sky-100 to-emerald-50 text-gray-900 flex flex-col items-center pt-20 pb-12 px-4">
       <motion.h1
         className="text-5xl font-bold mb-8 bg-clip-text text-transparent bg-gradient-to-r from-purple-600 via-indigo-500 to-blue-400"
         initial={{ opacity: 0, y: -24 }}
@@ -282,7 +289,7 @@ export default function ProgressPage() {
                         <li key={t.id} className="flex justify-between items-start bg-white/80 rounded-md p-2 border border-indigo-100">
                           <div>
                             <div className="font-medium text-blue-800">{t.title}</div>
-                            {t.durationMinutes ? <div className="text-xs text-gray-600 mt-1">{t.durationMinutes} min</div> : null}
+                            {/* duration in minutes removed - no longer shown */}
                           </div>
                           <div className="text-xs text-gray-500">{toDateSafe(t.completedAt)?.toLocaleTimeString()}</div>
                         </li>
@@ -329,7 +336,7 @@ export default function ProgressPage() {
                         <li key={t.id} className="flex justify-between items-start bg-white/80 rounded-md p-2 border border-sky-100">
                           <div>
                             <div className="font-medium text-blue-800">{t.title}</div>
-                            {t.durationMinutes ? <div className="text-xs text-gray-600 mt-1">{t.durationMinutes} min</div> : null}
+                            {/* duration in minutes removed - no longer shown */}
                           </div>
                           <div className="text-xs text-gray-500">{toDateSafe(t.completedAt)?.toLocaleDateString()}</div>
                         </li>
