@@ -9,7 +9,7 @@ export const runtime = "edge";
 
 export async function POST(req: NextRequest) {
   try {
-    const { content } = await req.json();
+    const { content, mode } = await req.json();
     if (!content || typeof content !== "string") {
       return NextResponse.json({ error: "Missing 'content' string in body" }, { status: 400 });
     }
@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
 
-    const prompt = `Summarize the following study notes succinctly. Give the response without any formatting as where I need to post does not support formatting.\n\n Return clear key points with "-" and a short overview paragraph, reducing the content size to about 30%.\n\nNotes:\n${content}`;
+    const isPunctuate = mode === "punctuate";
+    const prompt = isPunctuate
+      ? `Add appropriate punctuation, capitalization, and sentence boundaries to the following text.\n\nReturn ONLY the corrected plain text, with no explanations, no quotes, and no extra formatting.\n\nText:\n${content}`
+      : `Summarize the following study notes succinctly. Give the response without any formatting as where I need to post does not support formatting.\n\n Return clear key points with "-" and a short overview paragraph, reducing the content size to about 30%.\n\nNotes:\n${content}`;
     // Prefer stable model name with fallbacks in case an alias is unavailable
     const preferredModels = [
       "gemini-2.5-flash",
@@ -34,7 +37,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       generationConfig: {
-        temperature: 0.3,
+        temperature: isPunctuate ? 0.1 : 0.3,
         maxOutputTokens: 2048,
       },
     };
@@ -84,6 +87,10 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        if (isPunctuate) {
+          // For punctuation mode, return plain corrected text
+          return NextResponse.json({ text: combined });
+        }
         return NextResponse.json({ summary: combined });
       } else {
         const detailText = await res.text();

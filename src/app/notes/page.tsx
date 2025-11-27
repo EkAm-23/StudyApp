@@ -130,7 +130,7 @@ export default function NotesPage() {
           <h1 className="text-4xl font-bold text-blue-700 mb-3">
             Your Notebooks
           </h1>
-          <p className="text-blue-700">Organize your thoughts and ideas beautifully</p>
+          <p className="text-blue-700">Organize your thoughts and ideas</p>
         </div>
 
         {/* Create Notebook Section */}
@@ -143,7 +143,7 @@ export default function NotesPage() {
             </div>
             <input
               type="text"
-              placeholder="Enter notebook name..."
+              placeholder="Enter new Notebook title.."
               value={newNotebookTitle}
               onChange={(e) => setNewNotebookTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && createNotebook()}

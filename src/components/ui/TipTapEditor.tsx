@@ -34,6 +34,10 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
   const [interimText, setInterimText] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const lastFinalRef = useRef<string | null>(null);
+  const previewPosRef = useRef<number | null>(null);
+  const previewLengthRef = useRef<number>(0);
+  const committedTextRef = useRef<string>("");
+  const punctuationTriggeredRef = useRef<boolean>(false);
 
   const editor = useEditor({
     extensions: [
@@ -58,6 +62,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
 
   // Summarize loading state
   const [summarizing, setSummarizing] = useState(false);
+  const [punctuating, setPunctuating] = useState(false);
 
   // Feature detect Web Speech API
   useEffect(() => {
@@ -108,23 +113,98 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
         if (res.isFinal) localFinal += (localFinal ? " " : "") + transcript;
         else localInterim += (localInterim ? " " : "") + transcript;
       }
-
-      setInterimText(localInterim);
-
-      if (localFinal && editor) {
-        const cleaned = collapseRepeatedWords(localFinal);
-        const duplicate = lastFinalRef.current && lastFinalRef.current.toLowerCase() === cleaned.toLowerCase();
-        if (!duplicate) {
-          editor.chain().focus().insertContent(cleaned + " ").run();
-          lastFinalRef.current = cleaned;
-        }
+      if (!editor || previewPosRef.current === null) return;
+      // If we have finalized segments, append them to committed text
+      if (localFinal) {
+        const cleanedFinal = collapseRepeatedWords(localFinal);
+        committedTextRef.current = (committedTextRef.current + (committedTextRef.current ? " " : "") + cleanedFinal).trim();
         setInterimText("");
+      } else {
+        const cleanedInterim = collapseRepeatedWords(localInterim);
+        setInterimText(cleanedInterim);
+      }
+      // Build effective combined preview (committed + interim)
+      const effectiveInterim = localFinal ? "" : collapseRepeatedWords(localInterim);
+      const combined = (committedTextRef.current + (committedTextRef.current && effectiveInterim ? " " : "") + effectiveInterim).trim();
+      const from = previewPosRef.current;
+      const to = from + previewLengthRef.current;
+      if (previewLengthRef.current > 0) {
+        try { editor.commands.deleteRange({ from, to }); } catch {}
+      }
+      if (combined) {
+        editor.commands.insertContentAt(from, combined);
+        previewLengthRef.current = combined.length;
+      } else {
+        previewLengthRef.current = 0;
+      }
+    };
+
+    const punctuateAndCommit = async () => {
+      if (punctuationTriggeredRef.current) return;
+      punctuationTriggeredRef.current = true;
+      try {
+        if (!editor) return;
+        const combinedPlain = (committedTextRef.current + (committedTextRef.current && interimText ? " " : "") + interimText).trim();
+        if (!combinedPlain) return;
+        setPunctuating(true);
+        const res = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: combinedPlain, mode: "punctuate" }),
+        });
+        let finalText = combinedPlain;
+        if (res.ok) {
+          const data = await res.json();
+          const corrected = (data?.text as string) || (data?.summary as string) || "";
+          if (corrected && corrected.trim()) finalText = corrected.trim();
+        } else {
+          const errText = await res.text().catch(() => "");
+          console.error("Punctuate API error", res.status, errText);
+        }
+        // Replace preview with finalText
+        if (previewPosRef.current !== null) {
+          const from = previewPosRef.current;
+          const to = from + previewLengthRef.current;
+          try { editor.commands.deleteRange({ from, to }); } catch {}
+          editor.commands.insertContentAt(from, finalText + " ");
+          const newPos = from + finalText.length + 1;
+          try { editor.commands.setTextSelection(newPos); } catch {}
+        } else {
+          editor.chain().focus().insertContent(finalText + " ").run();
+        }
+      } catch (e) {
+        console.error("punctuateAndCommit error", e);
+        // Fallback: commit raw text
+        try {
+          if (editor) {
+            const combinedPlain = (committedTextRef.current + (committedTextRef.current && interimText ? " " : "") + interimText).trim();
+            if (previewPosRef.current !== null) {
+              const from = previewPosRef.current;
+              const to = from + previewLengthRef.current;
+              try { editor.commands.deleteRange({ from, to }); } catch {}
+              if (combinedPlain) {
+                editor.commands.insertContentAt(from, combinedPlain + " ");
+              }
+            } else if (combinedPlain) {
+              editor.chain().focus().insertContent(combinedPlain + " ").run();
+            }
+          }
+        } catch {}
+      } finally {
+        setPunctuating(false);
+        setInterimText("");
+        committedTextRef.current = "";
+        previewPosRef.current = null;
+        previewLengthRef.current = 0;
       }
     };
 
     const onEnd = () => {
       setListening(false);
-      setInterimText("");
+      // If recognition ended naturally without manual stop, commit
+      if (!punctuationTriggeredRef.current) {
+        punctuateAndCommit();
+      }
     };
 
     const onError = (e: unknown) => {
@@ -141,7 +221,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       rec.removeEventListener("end", onEnd);
       rec.removeEventListener("error", onError);
     };
-  }, [editor]);
+  }, [editor, interimText]);
 
   const startListening = () => {
     const rec = recognitionRef.current;
@@ -150,7 +230,16 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       lastFinalRef.current = null;
       rec.lang = "en-US";
       rec.interimResults = true;
+      // Allow longer dictation; manual stop or silence triggers end
       rec.continuous = true;
+      // Capture current cursor position and prepare inline preview
+      if (editor) {
+        const { from } = editor.state.selection;
+        previewPosRef.current = from;
+        previewLengthRef.current = 0;
+        committedTextRef.current = "";
+        punctuationTriggeredRef.current = false;
+      }
       rec.start();
       setListening(true);
     } catch (e) {
@@ -332,12 +421,17 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
             <button
               onClick={() => (listening ? stopListening() : startListening())}
               aria-pressed={listening}
-              title={listening ? "Stop voice input" : "Start voice input"}
+              title={punctuating ? "Adding punctuation" : (listening ? "Stop voice input" : "Start voice input")}
               className="relative flex items-center justify-center w-11 h-11 rounded-xl transition-shadow focus:outline-none"
             >
               <span className={`${listening ? "absolute inset-0 animate-ping rounded-xl bg-blue-200/40" : ""}`} />
               <span className={`relative z-10 inline-flex items-center justify-center rounded-lg ${listening ? "bg-red-500 text-white shadow-lg" : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"} w-11 h-11`}>
-                {!listening ? (
+                {punctuating ? (
+                  <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+                    <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" />
+                  </svg>
+                ) : !listening ? (
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v6a3 3 0 01-6 0V1M12 1v6a3 3 0 006 0V1" opacity="0" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 14v4M8 18h8M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z" />
@@ -380,9 +474,6 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       {/* Editor */}
       <div className="p-6 min-h-[400px] prose prose-slate max-w-none">
         <EditorContent editor={editor} />
-        {listening && interimText && (
-          <div className="mt-2 text-sm text-blue-500 italic select-none">{interimText}</div>
-        )}
       </div>
     </div>
   );
