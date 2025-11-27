@@ -297,7 +297,7 @@ export default function TipTapEditor({ content, onChange }: TipTapEditorProps) {
       onClick={() => editor?.commands.focus()}
     >
       {/* Toolbar */}
-  <div className="relative border-b-2 border-sky-200 p-3 flex gap-1 flex-wrap bg-sky-50 rounded-t-xl">
+  <div className="sticky top-4 z-30 border-b-2 border-sky-200 p-3 flex gap-1 flex-wrap bg-sky-50 rounded-t-xl">
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
