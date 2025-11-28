@@ -155,8 +155,6 @@ export default function HomePage() {
               style={{ width: `${dailyPercent}%` }}
             ></div>
           </div>
-          <p className="text-sm text-blue-700 mt-2">{dailyPercent}% complete today 🎯</p>
-          <p className="text-xs text-gray-500">Weekly progress: {weeklyPercent}%</p>
         </section>
       </div>
     </main>
